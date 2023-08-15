@@ -28,16 +28,16 @@ def average_dynamics(L,H_xi,xi_list,c_list,t_list,psi0,n_noise,obs_list):
     
 
 
-def avr_me(k, L,H_xi,xi_list,c_list,t_list,psi0,n_noise,obs_list):
+def avr_me(k, L,H_xi,xi_list,c_list,t_list,psi0,n_noise,obs_list,options):
         xi = xi_list[k]
         L_xi = [H_xi,xi] 
         args = {}
-        options = Options(num_cpus=4, atol=1e-15,nsteps = 100000000)
+        
         #dynamics_list.append(mesolve([L,L_xi], psi0, t_list, c_list, obs_list,args=args,options=options).expect[0])
-        result = mesolve([L,L_xi], psi0, t_list, c_list, obs_list,args=args,options=options).expect[0]
+        result = mesolve([L,L_xi], psi0, t_list, c_list, obs_list,args=args,options=options)
         return result
 
-def average_dynamics_parallel(L,H_xi,xi_list,c_list,t_list,psi0,n_noise,obs_list):
+def average_dynamics_parallel(L,H_xi,xi_list,c_list,t_list,psi0,n_noise,obs_list,N_corr):
     sigma = 1
     dynamics_average = 0
     dynamics_list = []    
@@ -47,10 +47,21 @@ def average_dynamics_parallel(L,H_xi,xi_list,c_list,t_list,psi0,n_noise,obs_list
     
         #dynamics_average += dynamics_list[-1]
 	
-    dynamics_list = parallel_map(avr_me, range(n_noise), task_args=(L,H_xi,xi_list,c_list,t_list,psi0,n_noise,obs_list))
+    options = Options(num_cpus=4, atol=1e-15,nsteps = 100000000,store_states=True, max_step = t_list[-1]/N_corr)
+    result = parallel_map(avr_me, range(n_noise), task_args=(L,H_xi,xi_list,c_list,t_list,psi0,n_noise,obs_list, options),progress_bar=True)
+    dynamics_list = []
+    state_list = [0 for t in t_list]
+    #for res in result:
+    for r_index in progressbar(np.arange(len(result))):
+        res = result[r_index]
+        dynamics_list.append(res.expect[0])
+        for kk,t in enumerate(t_list):
+        
+            state_list[kk]+=(res.states[kk].ptrace(0))/n_noise
+        
     #dynamics_average = sum([res[-1] for res in dynamics_list])
-    dynamics_average = sum(dynamics_list)
-    
+    dynamics_average = sum(np.array(dynamics_list))
+
     
     dynamics_average = dynamics_average / n_noise
     sigma = 0 * np.array(dynamics_average)
@@ -59,4 +70,4 @@ def average_dynamics_parallel(L,H_xi,xi_list,c_list,t_list,psi0,n_noise,obs_list
     #sigma = cmath.sqrt(sigma / len(dynamics_list) - np.array(dynamics_average)**2) / np.sqrt(n_noise)
     sigma = np.sqrt(sigma / len(dynamics_list) - np.array(dynamics_average)**2) / np.sqrt(n_noise)
     #sigma = np.sqrt(sigma / len(dynamics_list) - np.array(dynamics_average)**2) / np.sqrt(n_noise)
-    return dynamics_average, sigma, dynamics_list
+    return dynamics_average, sigma, dynamics_list, state_list

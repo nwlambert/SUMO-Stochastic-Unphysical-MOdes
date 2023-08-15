@@ -62,6 +62,7 @@ class Stochastic_model():
 
         n_cut = stoch_params['n_cut'] 
         n_noise = stoch_params['n_noise'] 
+        N_corr = stoch_params['N_corr'] 
 
         self.C_s, self.C_as = compute_correlations(J,beta,W_i,W_f,integration_limit,t_corr_list)
         self.ordered_PM_parameters, self.C_as_fit, self.C_s_extra = fit(t_corr_list,self.C_as,n_as_exp)
@@ -73,7 +74,7 @@ class Stochastic_model():
         self.xi_interpolated_list, self.C_s_reconstructed_stochastic = generate_fields(t_corr_list,self.coeff_list,n_cut,n_noise)
 
         self.H_S, self.s, self.H_xi, self.L, self.psi0, self.new_obs_list, self.c_list = generate_PM_model(H_S,psi0_S,s,self.ordered_PM_parameters,obs_list,N_S,N_PM)
-        self.dynamics_average, self.sigma, self.dynamics_list = average_dynamics_parallel(self.L,self.H_xi,self.xi_interpolated_list,self.c_list,t_list,self.psi0,n_noise,self.new_obs_list)
+        self.dynamics_average, self.sigma, self.dynamics_list,self.state_average = average_dynamics_parallel(self.L,self.H_xi,self.xi_interpolated_list,self.c_list,t_list,self.psi0,n_noise,self.new_obs_list,N_corr)
     
 
 class PM_model_Brownian_ZeroT():
@@ -131,7 +132,7 @@ class PM_model_Brownian_ZeroT():
         # Lindblad, observables and initial state
         c_list = []
         obs_list = [sz,a.dag()* a,b_m1.dag() * b_m1, b_m2.dag() * b_m2 ]
-        psi0 = tensor(basis(2,1),basis(N_R,0),basis(N_M,0),basis(N_M,0))
+        psi0 = tensor(basis(2,0),basis(N_R,0),basis(N_M,0),basis(N_M,0))
 
         H_S = ws / 2. * sz 
         L = Hamiltonian_single(H_S)
@@ -141,7 +142,10 @@ class PM_model_Brownian_ZeroT():
 
         #Dynamics
         args={}
-        self.dynamics_full, self.dynamics_a, self.dynamics_m1, self.dynamics_m2  = mesolve(L, psi0, t_list, c_list, obs_list,args=args).expect
+        options = Options(num_cpus=4, atol=1e-15,nsteps = 100000000,store_states=True)
+        result = mesolve(L, psi0, t_list, c_list, obs_list,args=args,options=options)
+        self.dynamics_full, self.dynamics_a, self.dynamics_m1, self.dynamics_m2  = result.expect
+        self.states = result.states
 
         # pickle_out = open("./bath-observables/Classes/Data/mats.dat",'wb')
         # pickle.dump(mats.mats,pickle_out)
@@ -190,7 +194,7 @@ class PM_model_Brownian_ZeroT_noMats():
         # Lindblad, observables and initial state
         c_list = []
         obs_list = [sz]
-        psi0 = tensor(basis(2,1),basis(N_R,0))
+        psi0 = tensor(basis(2,0),basis(N_R,0))
 
         H_S = ws / 2. * sz 
         L = Hamiltonian_single(H_S)
@@ -198,7 +202,12 @@ class PM_model_Brownian_ZeroT_noMats():
 
         #Dynamics
         args={}
-        self.dynamics_full = mesolve(L, psi0, t_list, c_list, obs_list,args=args).expect[0]
+        options = Options(num_cpus=4, atol=1e-15,nsteps = 100000000,store_states=True)
+        result=mesolve(L, psi0, t_list, c_list, obs_list,args=args,options=options)
+        self.dynamics_full = result.expect[0]
+        
+     
+        self.states = result.states
 
     def bi_exponential(self,x, a1, b1, a2,b2):
         return a1*np.exp(-b1*abs(x)) + a2*np.exp(-b2*abs(x))
